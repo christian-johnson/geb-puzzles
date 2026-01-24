@@ -182,8 +182,8 @@ class Operation:
         # insert & delete bases
         if action == "del":
             self.strand.string = (
-                self.strand.string[: self.bound - 1]
-                + self.strand.string[self.bound + 1:]
+                self.strand.string[: self.bound] +
+                self.strand.string[self.bound + 1:]
             )
             self.strand.string += " "
             # This explicitly doesn't apply to the second strand
@@ -192,76 +192,76 @@ class Operation:
             self.strand.string = (
                 self.strand.string[: self.bound + 1]
                 + "A"
-                + self.strand.string[self.bound:]
+                + self.strand.string[self.bound + 1:]
             )
             if self.copy_mode:
                 self.second_strand.string = (
-                    self.second_strand.string[: self.bound]
+                    self.second_strand.string[: self.bound + 1]
                     + counterpart("A")
-                    + self.second_strand.string[self.bound:]
+                    + self.second_strand.string[self.bound + 1:]
                 )
 
             else:
                 self.second_strand.string = (
-                    self.second_strand.string[: self.bound]
+                    self.second_strand.string[: self.bound + 1]
                     + " "
-                    + self.second_strand.string[self.bound:]
+                    + self.second_strand.string[self.bound + 1:]
                 )
         if action == "ing":
             self.strand.string = (
                 self.strand.string[: self.bound + 1]
                 + "G"
-                + self.strand.string[self.bound:]
+                + self.strand.string[self.bound + 1:]
             )
             if self.copy_mode:
                 self.second_strand.string = (
-                    self.second_strand.string[: self.bound]
+                    self.second_strand.string[: self.bound + 1]
                     + counterpart("G")
-                    + self.second_strand.string[self.bound:]
+                    + self.second_strand.string[self.bound + 1:]
                 )
             else:
                 self.second_strand.string = (
-                    self.second_strand.string[: self.bound]
+                    self.second_strand.string[: self.bound + 1]
                     + " "
-                    + self.second_strand.string[self.bound:]
+                    + self.second_strand.string[self.bound + 1:]
                 )
 
         if action == "int":
             self.strand.string = (
                 self.strand.string[: self.bound + 1]
                 + "T"
-                + self.strand.string[self.bound:]
+                + self.strand.string[self.bound + 1:]
             )
             if self.copy_mode:
                 self.second_strand.string = (
-                    self.second_strand.string[: self.bound]
+                    self.second_strand.string[: self.bound + 1]
                     + counterpart("T")
-                    + self.second_strand.string[self.bound:]
+                    + self.second_strand.string[self.bound + 1:]
                 )
             else:
                 self.second_strand.string = (
-                    self.second_strand.string[: self.bound]
+                    self.second_strand.string[: self.bound + 1]
                     + " "
-                    + self.second_strand.string[self.bound:]
+                    + self.second_strand.string[self.bound + 1:]
                 )
         if action == "inc":
             self.strand.string = (
                 self.strand.string[: self.bound + 1]
                 + "C"
-                + self.strand.string[self.bound:]
+                + self.strand.string[self.bound + 1:]
             )
             if self.copy_mode:
                 self.second_strand.string = (
-                    self.second_strand.string[: self.bound]
+                    self.second_strand.string[: self.bound + 1]
                     + counterpart("C")
-                    + self.second_strand.string[self.bound:]
+                    + self.second_strand.string[self.bound + 1:]
                 )
 
             else:
                 self.second_strand.string = (
-                    self.second_strand.string[: self.bound]
+                    self.second_strand.string[: self.bound + 1]
                     + " "
-                    + self.second_strand.string[self.bound:]
+                    + self.second_strand.string[self.bound + 1:]
                 )
         if action == "cut":
             # Cut the strand into two to the right of the current location
@@ -286,7 +286,7 @@ class Operation:
                 self.strand.string = self.strand.string[::-1]
                 self.second_strand.string = self.second_strand.string[::-1]
                 # and figure out our new 'bound' location
-                self.bound = len(self.strand.string) - self.bound
+                self.bound = len(self.strand.string) - self.bound - 1
 
         if action == "mvr":
             self.move_right()
@@ -358,10 +358,10 @@ def create_enzyme_s(strand):
     return enzymes
 
 
-def create_random_strand():
+def create_random_strand(min_length=16, max_length=36):
     strand = ""
     choices = ["A", "T", "G", "C"]
-    length = np.random.randint(5, 15)
+    length = np.random.randint(min_length, max_length)
     for i in range(length):
         strand += np.random.choice(choices)
 
@@ -371,7 +371,7 @@ def create_random_strand():
 @click.command()
 @click.option("--starting-string", default=None, help="Starting typogenetic string.")
 @click.option(
-    "--max-iterations", default=10, help="Maximum number of iterations to run."
+    "--max-iterations", default=3, help="Maximum number of iterations to run."
 )
 def run_iterations(starting_string, max_iterations):
     """
@@ -379,19 +379,32 @@ def run_iterations(starting_string, max_iterations):
     """
     # Start with your starting strand
     if starting_string is None:
-        starting_string = create_random_strand()
+        starting_string = create_random_strand(min_length=24)
+
     strand = Strand(starting_string)
     strand.derive_codons()
     strands = [strand]
 
-    # Apply ribosome action to that strand
-    enzymes = create_enzyme_s(strand)
+    strings_per_generation = {}
+    print(f"Starting string: |{starting_string}|")
+    for i in range(max_iterations):
+        print("Generation: ", i)
+        # Apply ribosome action to that strand
+        for strand in strands:
+            enzymes = create_enzyme_s(strand)
 
-    # Act upon the strand with the resulting enzyme(s)
-    for enzyme, strand in product(enzymes, strands):
-        operation = Operation(enzyme, strand)
+        new_strings = []
+        # Act upon the strand with the resulting enzyme(s)
+        for enzyme, strand in product(enzymes, strands):
+            operation = Operation(enzyme, strand)
+            new_strings.extend(operation.strings)
 
-    print("New strings created: ", operation.strings)
+        strings_per_generation[i] = new_strings
+        strands = [Strand(s) for s in new_strings]
+        for strand in strands:
+            strand.derive_codons()
+
+    print("New strings created: ", new_strings)
 
 
 if __name__ == "__main__":
