@@ -1,6 +1,5 @@
 import click
 import numpy as np
-from itertools import product
 
 AMINO_DICT = {
     "AA": {"amino": "punctuation", "direction": "N/A"},
@@ -31,6 +30,8 @@ def counterpart(B):
         return "G"
     if B == "G":
         return "C"
+    if B == " ":
+        return " "
 
 
 def find_preferential_binding(dirs):
@@ -76,12 +77,16 @@ class Operation:
     including the initial one.
     """
 
-    def __init__(self, enzyme, strand):
+    def __init__(self, enzyme, strand, verbose=False):
+        self.verbose = verbose
         self.enzyme = enzyme
         self.strand = strand
         # initially, this is nothing
         self.second_strand = Strand(len(self.strand.string) * " ")
         self.copy_mode = False
+        # Store the outcome of this enzyme/strand set of operations
+        self.final_strings = []
+        # A placeholder array to store some extra strings
         self.strings = []
         self.operate()
 
@@ -95,34 +100,51 @@ class Operation:
         # bound is the position of the enzyme on the Strand it's operating on
         self.bind()
 
-        print("Enzyme sequence: ", self.enzyme.seq)
-        print("initial binding preference: ", self.enzyme.preferential_binding)
-        print("initial binding position: ", self.bound)
-        print("")
+        if self.verbose:
+            print("")
+            print("String: ", self.strand.string)
+            print("Enzyme sequence: ", self.enzyme.seq)
+            print("initial binding preference: ",
+                  self.enzyme.preferential_binding)
+            print("initial binding position: ", self.bound)
+            print("")
         while (
             self.bound > -1
-            and self.bound < len(self.strand.string) + 1
+            and self.bound < len(self.strand.string) - 1
             and self.seq_i < len(self.enzyme.seq)
         ):
             self.iter()
             self.seq_i += 1
 
+        # Strings created from cuts
+        for string in self.strings:
+            substrings = string.split(" ")
+            for substring in substrings:
+                if " " not in substring and len(substring):
+                    self.final_strings.append(substring)
+
+        # Ending strings
         self.primary_strings = "".join(self.strand.string).split(" ")
         self.secondary_strings = "".join(self.second_strand.string).split(" ")
         # Split up on empty sequences
-        print("self.primary_strings = ", self.primary_strings)
-        print("self.second_string = ", self.second_strand.string)
+        if self.verbose:
+            print("self.primary_strings = ", self.primary_strings)
+            print("self.second_string = ", self.second_strand.string)
         for entry in self.primary_strings:
             if len(entry) and " " not in entry:
-                self.strings.append(entry)
+                if self.verbose:
+                    print("adding string: |" + entry + "|")
+                self.final_strings.append(entry)
         for entry in self.secondary_strings:
             if len(entry) and " " not in entry:
-                self.strings.append(entry)
+                if self.verbose:
+                    print("adding string: |" + entry + "|")
+                self.final_strings.append(entry)
 
     def move_right(self):
         self.bound += 1
         if (
-            self.bound < len(self.strand.string)
+            self.bound < len(self.strand.string) - 1
             and self.copy_mode
             and self.second_strand.string[self.bound] == " "
         ):
@@ -159,15 +181,16 @@ class Operation:
         # First look up which operation we want
         action = self.enzyme.seq[self.seq_i]
 
-        print("Current action:", action)
-        print("Secondary string: |" + self.second_strand.string + "|")
-        print("Primary string:   |" + self.strand.string + "|")
-        print(
-            "                   "
-            + " " * self.bound
-            + "^"
-            + " " * (len(self.strand.string) - self.bound)
-        )
+        if self.verbose:
+            print("Current action:", action)
+            print("Secondary string: |" + self.second_strand.string + "|")
+            print("Primary string:   |" + self.strand.string + "|")
+            print(
+                "                   "
+                + " " * self.bound
+                + "^"
+                + " " * (len(self.strand.string) - self.bound)
+            )
 
         if action == "punctuation":
             # end the operation
@@ -256,7 +279,6 @@ class Operation:
                     + counterpart("C")
                     + self.second_strand.string[self.bound + 1:]
                 )
-
             else:
                 self.second_strand.string = (
                     self.second_strand.string[: self.bound + 1]
@@ -268,10 +290,15 @@ class Operation:
             # (Note this is ambiguous in the instructions in GEB, but matches
             # the example given)
             # This applies to both strands if there is a second one
+
+            # save the cut off strings
             self.strings.append(self.strand.string[self.bound + 1:])
             self.strings.append(
                 self.second_strand.string[self.bound + 1:][::-1])
+            # Now cut
             self.strand.string = self.strand.string[: self.bound + 1]
+            # also cut the second strand
+            self.second_strand.string = self.second_strand.string[: self.bound + 1]
             # Now that it's been cut, we're at the last position
             self.bound = len(self.strand.string) - 1
 
@@ -296,41 +323,69 @@ class Operation:
 
         if action == "rpy":
             self.move_right()
+
             # Move to the nearest pyrimidine (T or C) to the right
-            if "T" or "C" in self.strand.string[self.bound + 1:]:
+            if self.bound >= len(self.strand.string) - 1:
+                pass
+            elif (
+                "T" in self.strand.string[self.bound + 1:]
+                or "C" in self.strand.string[self.bound + 1:]
+            ):
                 while (
                     self.strand.string[self.bound] != "T"
                     and self.strand.string[self.bound] != "C"
+                    and self.strand.string[self.bound] != " "
                 ):
                     self.move_right()
+                if self.strand.string[self.bound] == " ":
+                    self.bound = -1
         if action == "rpu":
             # Move to the nearest purine (A or G) to the right
             self.move_right()
-            if "A" or "G" in self.strand.string[self.bound + 1:]:
+            if self.bound >= len(self.strand.string) - 1:
+                pass
+            elif (
+                "A" in self.strand.string[self.bound + 1:]
+                or "G" in self.strand.string[self.bound + 1:]
+            ):
                 while (
                     self.strand.string[self.bound] != "A"
                     and self.strand.string[self.bound] != "G"
+                    and self.strand.string[self.bound] != " "
                 ):
                     self.move_right()
+                if self.strand.string[self.bound] == " ":
+                    self.bound = -1
         if action == "lpy":
             # Move to the nearest pyrimidine (T or C) to the left
-            if "T" or "C" in self.strand.string[: self.bound]:
+            if (
+                "T" in self.strand.string[: self.bound]
+                or "C" in self.strand.string[: self.bound]
+            ):
                 self.move_left()
                 while (
                     self.strand.string[self.bound] != "T"
                     and self.strand.string[self.bound] != "C"
+                    and self.strand.string[self.bound] != " "
                 ):
                     self.move_left()
-
+                if self.strand.string[self.bound] == " ":
+                    self.bound = -1
         if action == "lpu":
             self.move_left()
             # Move to the nearest purine (A or G) to the left
-            if "A" or "G" in self.strand.string[: self.bound]:
+            if (
+                "A" in self.strand.string[: self.bound]
+                or "G" in self.strand.string[: self.bound]
+            ):
                 while (
                     self.strand.string[self.bound] != "A"
                     and self.strand.string[self.bound] != "G"
+                    and self.strand.string[self.bound] != " "
                 ):
                     self.move_left()
+                if self.strand.string[self.bound] == " ":
+                    self.bound = -1
 
 
 def create_enzyme_s(strand):
@@ -358,7 +413,7 @@ def create_enzyme_s(strand):
     return enzymes
 
 
-def create_random_strand(min_length=16, max_length=36):
+def create_random_strand(min_length=10, max_length=36):
     strand = ""
     choices = ["A", "T", "G", "C"]
     length = np.random.randint(min_length, max_length)
@@ -368,44 +423,117 @@ def create_random_strand(min_length=16, max_length=36):
     return strand
 
 
-@click.command()
-@click.option("--starting-string", default=None, help="Starting typogenetic string.")
-@click.option(
-    "--max-iterations", default=3, help="Maximum number of iterations to run."
-)
-def run_iterations(starting_string, max_iterations):
+def identify_duplicates(the_list):
+    seen = set()
+    duplicates = []
+    for i in the_list:
+        if i in seen:
+            duplicates.append(i)
+        else:
+            seen.add(i)
+    return set(duplicates)
+
+
+def run_a_set_of_generations(starting_string, max_iterations, verbose):
     """
     Run the typogenetic "Central Dogma" with a starting-string
     """
     # Start with your starting strand
     if starting_string is None:
-        starting_string = create_random_strand(min_length=24)
+        starting_string = create_random_strand(min_length=12)
 
     strand = Strand(starting_string)
     strand.derive_codons()
     strands = [strand]
 
     strings_per_generation = {}
+    broken = False
     print(f"Starting string: |{starting_string}|")
     for i in range(max_iterations):
-        print("Generation: ", i)
+        if verbose:
+            print("Generation: ", i)
         # Apply ribosome action to that strand
+        enzymes = []
         for strand in strands:
-            enzymes = create_enzyme_s(strand)
+            enzymes.extend(create_enzyme_s(strand))
 
-        new_strings = []
+        if verbose:
+            print(f"Created {len(enzymes)} enzymes from {
+                  len(strands)} strands")
         # Act upon the strand with the resulting enzyme(s)
-        for enzyme, strand in product(enzymes, strands):
-            operation = Operation(enzyme, strand)
-            new_strings.extend(operation.strings)
+        # This nested loop resolves the ambiguity of which enzyme acts on which strand
+        for enzyme in enzymes:
+            temp_strands = []
+            for strand in strands:
+                operation = Operation(enzyme, strand, verbose)
+                temp_strands.extend(operation.final_strings)
+                strands = [Strand(s) for s in temp_strands]
 
-        strings_per_generation[i] = new_strings
-        strands = [Strand(s) for s in new_strings]
+        strings_per_generation[i] = temp_strands
+        strands = [Strand(s) for s in temp_strands]
+
+        if verbose:
+            print(f"End of Generation {i}. {len(strands)} strands created:")
         for strand in strands:
             strand.derive_codons()
 
-    print("New strings created: ", new_strings)
+        if len(strands) > 20 or len(enzymes) > 10:
+            print("Too many strands detected")
+            broken = True
+            break
+
+    for i in range(max_iterations):
+        if verbose:
+            print(f"Generation {i}: ", strings_per_generation[i])
+
+    # eval
+    loop_found = False
+    if not broken:
+        for i in range(max_iterations)[::-1]:
+            # We need to check for a duplicate - and whether that duplicate
+            # has existed in a previous generation
+            dupes = identify_duplicates(strings_per_generation[i])
+            if len(dupes):
+                for dupe in dupes:
+                    # search backwards
+                    for j in [0]:
+                        if dupe == starting_string:
+                            print("Loop found! with dupe: |" + dupe + "|")
+                            print("Starting string was: |" +
+                                  starting_string + "|")
+                            loop_found = True
+    if not loop_found:
+        print("No loops found")
+    return loop_found
+
+
+@click.command()
+@click.option("--starting-string", default=None, help="Starting typogenetic string.")
+@click.option(
+    "--max-iterations", default=10, help="Maximum number of iterations to run."
+)
+@click.option(
+    "--verbose",
+    default=False,
+    help="Whether to display the full sequence of iterations.",
+)
+def run_iterations(starting_string, max_iterations, verbose):
+    run_a_set_of_generations(starting_string, max_iterations, verbose)
+
+
+@click.command()
+@click.option(
+    "--max-iterations", default=10, help="Maximum number of iterations to run."
+)
+@click.option("--n", default=1000, help="How many starting strings to try.")
+def run_many_iterations(max_iterations, n):
+    for k in range(n):
+        loop_found = run_a_set_of_generations(
+            None, max_iterations=max_iterations, verbose=False
+        )
+        if loop_found:
+            break
 
 
 if __name__ == "__main__":
-    run_iterations()
+    run_many_iterations()
