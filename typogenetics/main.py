@@ -1,5 +1,8 @@
 import click
 import numpy as np
+from tqdm import trange
+import time
+import itertools
 
 AMINO_DICT = {
     "AA": {"amino": "punctuation", "direction": "N/A"},
@@ -58,7 +61,7 @@ class Strand:
         Not needed during enzyme operations
         """
         self.codons = [
-            self.string[2 * i: 2 * i + 2]
+            self.string[2 * i : 2 * i + 2]
             for i in range(round(len(self.string) / 2 + 0.1))
         ]
 
@@ -66,6 +69,7 @@ class Strand:
 class Enzyme:
     def __init__(self, seq, directions):
         self.seq = seq
+        self.name = "".join(seq)
         self.directions = directions
         self.preferential_binding = find_preferential_binding(self.directions)
 
@@ -80,7 +84,7 @@ class Operation:
     def __init__(self, enzyme, strand, verbose=False):
         self.verbose = verbose
         self.enzyme = enzyme
-        self.strand = strand
+        self.strand = Strand(strand.string)
         # initially, this is nothing
         self.second_strand = Strand(len(self.strand.string) * " ")
         self.copy_mode = False
@@ -104,8 +108,7 @@ class Operation:
             print("")
             print("String: ", self.strand.string)
             print("Enzyme sequence: ", self.enzyme.seq)
-            print("initial binding preference: ",
-                  self.enzyme.preferential_binding)
+            print("initial binding preference: ", self.enzyme.preferential_binding)
             print("initial binding position: ", self.bound)
             print("")
         while (
@@ -128,6 +131,7 @@ class Operation:
         self.secondary_strings = "".join(self.second_strand.string).split(" ")
         # Split up on empty sequences
         if self.verbose:
+            print("Done with operation...")
             print("self.primary_strings = ", self.primary_strings)
             print("self.second_string = ", self.second_strand.string)
         for entry in self.primary_strings:
@@ -138,20 +142,20 @@ class Operation:
         for entry in self.secondary_strings:
             if len(entry) and " " not in entry:
                 if self.verbose:
-                    print("adding string: |" + entry + "|")
-                self.final_strings.append(entry)
+                    print("adding string: |" + entry[::-1] + "|")
+                self.final_strings.append(entry[::-1])
 
     def move_right(self):
         self.bound += 1
         if (
-            self.bound < len(self.strand.string) - 1
+            self.bound <= len(self.strand.string) - 1
             and self.copy_mode
             and self.second_strand.string[self.bound] == " "
         ):
             self.second_strand.string = (
                 self.second_strand.string[: self.bound]
                 + counterpart(self.strand.string[self.bound])
-                + self.second_strand.string[self.bound + 1:]
+                + self.second_strand.string[self.bound + 1 :]
             )
 
     def move_left(self):
@@ -164,7 +168,7 @@ class Operation:
             self.second_strand.string = (
                 self.second_strand.string[: self.bound]
                 + counterpart(self.strand.string[self.bound])
-                + self.second_strand.string[self.bound + 1:]
+                + self.second_strand.string[self.bound + 1 :]
             )
 
     def bind(self):
@@ -196,17 +200,24 @@ class Operation:
             # end the operation
             self.bound = -1
 
-        # These are easy
+        # This one is easy
         if action == "off":
             self.copy_mode = False
+
+        # slightly more complicated, because we should copy on this action
         if action == "cop":
             self.copy_mode = True
+
+            self.second_strand.string = (
+                self.second_strand.string[: self.bound]
+                + counterpart(self.strand.string[self.bound])
+                + self.second_strand.string[self.bound + 1 :]
+            )
 
         # insert & delete bases
         if action == "del":
             self.strand.string = (
-                self.strand.string[: self.bound] +
-                self.strand.string[self.bound + 1:]
+                self.strand.string[: self.bound] + self.strand.string[self.bound + 1 :]
             )
             self.strand.string += " "
             # This explicitly doesn't apply to the second strand
@@ -215,75 +226,75 @@ class Operation:
             self.strand.string = (
                 self.strand.string[: self.bound + 1]
                 + "A"
-                + self.strand.string[self.bound + 1:]
+                + self.strand.string[self.bound + 1 :]
             )
             if self.copy_mode:
                 self.second_strand.string = (
                     self.second_strand.string[: self.bound + 1]
                     + counterpart("A")
-                    + self.second_strand.string[self.bound + 1:]
+                    + self.second_strand.string[self.bound + 1 :]
                 )
 
             else:
                 self.second_strand.string = (
                     self.second_strand.string[: self.bound + 1]
                     + " "
-                    + self.second_strand.string[self.bound + 1:]
+                    + self.second_strand.string[self.bound + 1 :]
                 )
         if action == "ing":
             self.strand.string = (
                 self.strand.string[: self.bound + 1]
                 + "G"
-                + self.strand.string[self.bound + 1:]
+                + self.strand.string[self.bound + 1 :]
             )
             if self.copy_mode:
                 self.second_strand.string = (
                     self.second_strand.string[: self.bound + 1]
                     + counterpart("G")
-                    + self.second_strand.string[self.bound + 1:]
+                    + self.second_strand.string[self.bound + 1 :]
                 )
             else:
                 self.second_strand.string = (
                     self.second_strand.string[: self.bound + 1]
                     + " "
-                    + self.second_strand.string[self.bound + 1:]
+                    + self.second_strand.string[self.bound + 1 :]
                 )
 
         if action == "int":
             self.strand.string = (
                 self.strand.string[: self.bound + 1]
                 + "T"
-                + self.strand.string[self.bound + 1:]
+                + self.strand.string[self.bound + 1 :]
             )
             if self.copy_mode:
                 self.second_strand.string = (
                     self.second_strand.string[: self.bound + 1]
                     + counterpart("T")
-                    + self.second_strand.string[self.bound + 1:]
+                    + self.second_strand.string[self.bound + 1 :]
                 )
             else:
                 self.second_strand.string = (
                     self.second_strand.string[: self.bound + 1]
                     + " "
-                    + self.second_strand.string[self.bound + 1:]
+                    + self.second_strand.string[self.bound + 1 :]
                 )
         if action == "inc":
             self.strand.string = (
                 self.strand.string[: self.bound + 1]
                 + "C"
-                + self.strand.string[self.bound + 1:]
+                + self.strand.string[self.bound + 1 :]
             )
             if self.copy_mode:
                 self.second_strand.string = (
                     self.second_strand.string[: self.bound + 1]
                     + counterpart("C")
-                    + self.second_strand.string[self.bound + 1:]
+                    + self.second_strand.string[self.bound + 1 :]
                 )
             else:
                 self.second_strand.string = (
                     self.second_strand.string[: self.bound + 1]
                     + " "
-                    + self.second_strand.string[self.bound + 1:]
+                    + self.second_strand.string[self.bound + 1 :]
                 )
         if action == "cut":
             # Cut the strand into two to the right of the current location
@@ -292,9 +303,8 @@ class Operation:
             # This applies to both strands if there is a second one
 
             # save the cut off strings
-            self.strings.append(self.strand.string[self.bound + 1:])
-            self.strings.append(
-                self.second_strand.string[self.bound + 1:][::-1])
+            self.strings.append(self.strand.string[self.bound + 1 :])
+            self.strings.append(self.second_strand.string[self.bound + 1 :][::-1])
             # Now cut
             self.strand.string = self.strand.string[: self.bound + 1]
             # also cut the second strand
@@ -328,8 +338,8 @@ class Operation:
             if self.bound >= len(self.strand.string) - 1:
                 pass
             elif (
-                "T" in self.strand.string[self.bound + 1:]
-                or "C" in self.strand.string[self.bound + 1:]
+                "T" in self.strand.string[self.bound + 1 :]
+                or "C" in self.strand.string[self.bound + 1 :]
             ):
                 while (
                     self.strand.string[self.bound] != "T"
@@ -345,8 +355,8 @@ class Operation:
             if self.bound >= len(self.strand.string) - 1:
                 pass
             elif (
-                "A" in self.strand.string[self.bound + 1:]
-                or "G" in self.strand.string[self.bound + 1:]
+                "A" in self.strand.string[self.bound + 1 :]
+                or "G" in self.strand.string[self.bound + 1 :]
             ):
                 while (
                     self.strand.string[self.bound] != "A"
@@ -413,7 +423,7 @@ def create_enzyme_s(strand):
     return enzymes
 
 
-def create_random_strand(min_length=10, max_length=36):
+def create_random_strand(min_length=12, max_length=64):
     strand = ""
     choices = ["A", "T", "G", "C"]
     length = np.random.randint(min_length, max_length)
@@ -421,6 +431,19 @@ def create_random_strand(min_length=10, max_length=36):
         strand += np.random.choice(choices)
 
     return strand
+
+
+def generate_dna_sequences(length):
+    """
+    Systematically search all strands of a given length.
+    """
+    nucleotides = ["A", "C", "G", "T"]
+    # 'repeat' defines the fixed length of the sequence
+    iterations = itertools.product(nucleotides, repeat=length)
+
+    for seq in iterations:
+        # join the tuple into a string
+        yield "".join(seq)
 
 
 def identify_duplicates(the_list):
@@ -434,13 +457,13 @@ def identify_duplicates(the_list):
     return set(duplicates)
 
 
-def run_a_set_of_generations(starting_string, max_iterations, verbose):
+def run_a_set_of_generations(starting_string, max_generations, verbose):
     """
     Run the typogenetic "Central Dogma" with a starting-string
     """
     # Start with your starting strand
     if starting_string is None:
-        starting_string = create_random_strand(min_length=12)
+        starting_string = create_random_strand(min_length=10, max_length=11)
 
     strand = Strand(starting_string)
     strand.derive_codons()
@@ -448,8 +471,10 @@ def run_a_set_of_generations(starting_string, max_iterations, verbose):
 
     strings_per_generation = {}
     broken = False
-    print(f"Starting string: |{starting_string}|")
-    for i in range(max_iterations):
+    if verbose:
+        print(f"Starting string: |{starting_string}|")
+    for i in range(max_generations):
+        starting_time = time.time()
         if verbose:
             print("Generation: ", i)
         # Apply ribosome action to that strand
@@ -458,82 +483,92 @@ def run_a_set_of_generations(starting_string, max_iterations, verbose):
             enzymes.extend(create_enzyme_s(strand))
 
         if verbose:
-            print(f"Created {len(enzymes)} enzymes from {
-                  len(strands)} strands")
+            print(f"Created {len(enzymes)} enzymes from {len(strands)} strands")
         # Act upon the strand with the resulting enzyme(s)
         # This nested loop resolves the ambiguity of which enzyme acts on which strand
         for enzyme in enzymes:
-            temp_strands = []
-            for strand in strands:
-                operation = Operation(enzyme, strand, verbose)
-                temp_strands.extend(operation.final_strings)
-                strands = [Strand(s) for s in temp_strands]
+            if not broken:
+                new_strands = []
+                for strand in strands:
+                    operation = Operation(enzyme, strand, verbose)
 
-        strings_per_generation[i] = temp_strands
-        strands = [Strand(s) for s in temp_strands]
+                    new_strands.extend(operation.final_strings)
 
-        if verbose:
-            print(f"End of Generation {i}. {len(strands)} strands created:")
-        for strand in strands:
-            strand.derive_codons()
+                    ending_time = time.time()
+                    if ending_time - starting_time > 0.2:
+                        broken = True
+                        break
 
-        if len(strands) > 20 or len(enzymes) > 10:
-            print("Too many strands detected")
-            broken = True
-            break
+            strands = [Strand(s) for s in new_strands]
+            # check here for any loops
 
-    for i in range(max_iterations):
-        if verbose:
-            print(f"Generation {i}: ", strings_per_generation[i])
-
-    # eval
-    loop_found = False
-    if not broken:
-        for i in range(max_iterations)[::-1]:
-            # We need to check for a duplicate - and whether that duplicate
-            # has existed in a previous generation
-            dupes = identify_duplicates(strings_per_generation[i])
+            dupes = identify_duplicates([s.string for s in strands])
             if len(dupes):
                 for dupe in dupes:
                     # search backwards
-                    for j in [0]:
-                        if dupe == starting_string:
-                            print("Loop found! with dupe: |" + dupe + "|")
-                            print("Starting string was: |" +
-                                  starting_string + "|")
-                            loop_found = True
-    if not loop_found:
-        print("No loops found")
-    return loop_found
+                    if dupe == starting_string:
+                        print("Loop found! with dupe: |" + dupe + "|")
+                        return True
+
+        strings_per_generation[i] = new_strands
+
+        if verbose:
+            print(f"End of Generation {i}. {len(strands)} strands created:")
+            print([s.string for s in strands])
+        for strand in strands:
+            strand.derive_codons()
+
+        if len(strands) > 50 or len(enzymes) > 50:
+            if verbose:
+                print("Too many strands detected")
+            broken = True
+            break
+
+    for j in range(i):
+        if verbose:
+            print(f"Generation {j}: ", strings_per_generation[i])
+
+    return False
+
+
+@click.group(name="typogenetics")
+def typogenetics_cli() -> None:
+    """Typogenetics CLI; see commands for specific functionality."""
+    pass
 
 
 @click.command()
 @click.option("--starting-string", default=None, help="Starting typogenetic string.")
 @click.option(
-    "--max-iterations", default=10, help="Maximum number of iterations to run."
+    "--max-generations", default=2, help="Maximum number of iterations to run."
 )
 @click.option(
     "--verbose",
     default=False,
     help="Whether to display the full sequence of iterations.",
 )
-def run_iterations(starting_string, max_iterations, verbose):
-    run_a_set_of_generations(starting_string, max_iterations, verbose)
+def run_iterations(starting_string, max_generations, verbose):
+    run_a_set_of_generations(starting_string, max_generations, verbose)
 
 
 @click.command()
+@click.option("--strand-length", default=6, help="Search all strings of this length.")
 @click.option(
-    "--max-iterations", default=10, help="Maximum number of iterations to run."
+    "--max-generations", default=3, help="Maximum number of iterations to run."
 )
-@click.option("--n", default=1000, help="How many starting strings to try.")
-def run_many_iterations(max_iterations, n):
-    for k in range(n):
+def run_many_iterations(strand_length, max_generations):
+    for starting_string in generate_dna_sequences(strand_length):
         loop_found = run_a_set_of_generations(
-            None, max_iterations=max_iterations, verbose=False
+            starting_string=starting_string,
+            max_generations=max_generations,
+            verbose=False,
         )
         if loop_found:
             break
 
 
+typogenetics_cli.add_command(run_iterations)
+typogenetics_cli.add_command(run_many_iterations)
+
 if __name__ == "__main__":
-    run_many_iterations()
+    typogenetics_cli()
